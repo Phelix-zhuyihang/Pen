@@ -8,8 +8,9 @@ from datetime import datetime
 import tempfile
 import subprocess
 import platform
+import shlex
 
-VERSION = "1.4.0"
+VERSION = "1.5.1"
 BASE_URL = "https://server.moxiao.site"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pen_config.json")
 
@@ -49,10 +50,75 @@ def get_paste_content(slug):
         pass
     return ""
 
+def validate_slug(slug):
+    """验证slug是否符合服务器要求：仅支持a-z、0-9、_、-，长度3-48"""
+    import re
+    if len(slug) < 3 or len(slug) > 48:
+        return False, f"链接长度必须在3-48个字符之间（当前：{len(slug)}）"
+    if not re.match(r'^[a-z0-9_-]+$', slug):
+        return False, "链接仅支持小写字母(a-z)、数字(0-9)、下划线(_)和连字符(-)"
+    return True, ""
+
+def read_file_text(filepath):
+    """读取文件文本内容，自动检测编码，二进制文件给出友好提示"""
+    BINARY_EXTENSIONS = {
+        '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt',
+        '.pdf', '.zip', '.rar', '.7z', '.exe', '.dll',
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico',
+        '.mp3', '.mp4', '.avi', '.mkv', '.mov',
+        '.pyc', '.class', '.o', '.so', '.dylib', '.lib',
+        '.wps', '.et', '.dps',
+    }
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in BINARY_EXTENSIONS:
+        raise ValueError(
+            f"'{filepath}' 是二进制文件（{ext}），pen 只支持推送纯文本文件，\n"
+            f"请使用 .txt、.md、.py、.json、.html、.css、.js、.log 等纯文本格式"
+        )
+
+    with open(filepath, 'rb') as f:
+        raw_data = f.read()
+
+    null_ratio = raw_data.count(b'\x00') / max(len(raw_data), 1)
+    if null_ratio > 0.05:
+        raise ValueError(
+            f"'{filepath}' 检测为二进制文件，pen 只支持推送纯文本文件"
+        )
+
+    if raw_data.startswith(b'\xef\xbb\xbf'):
+        try:
+            return raw_data.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            pass
+
+    try:
+        from charset_normalizer import from_bytes
+        results = from_bytes(raw_data)
+        if results:
+            best = results.best()
+            if best.encoding:
+                return raw_data.decode(best.encoding)
+    except Exception:
+        pass
+
+    for enc in ['utf-8', 'gbk', 'gb18030', 'gb2312', 'latin-1']:
+        try:
+            return raw_data.decode(enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+
+    raise ValueError(f"无法识别文件编码: {filepath}")
+
 def set_paste_content(slug, content, session=None):
     if session is None:
         session = get_session()
     try:
+        # 先验证slug
+        is_valid, error_msg = validate_slug(slug)
+        if not is_valid:
+            raise ValueError(error_msg)
+        
         check_response = session.get(f"{BASE_URL}/api/pastes/{slug}")
         exists = check_response.status_code == 200
 
@@ -65,6 +131,8 @@ def set_paste_content(slug, content, session=None):
                 "visibility": "public_read"
             })
         return response
+    except ValueError as e:
+        raise e
     except Exception as e:
         raise e
 
@@ -164,10 +232,18 @@ def push(file, url, force):
     if not os.path.exists(file):
         click.secho(f"文件 {file} 不存在", fg="red")
         return
-    with open(file, "r", encoding="utf-8") as f:
-        content = f.read()
+    try:
+        content = read_file_text(file)
+    except ValueError as e:
+        click.secho(f"错误: {str(e)}", fg="red")
+        return
     session = get_session()
     try:
+        is_valid, error_msg = validate_slug(url)
+        if not is_valid:
+            click.secho(f"错误: {error_msg}", fg="red")
+            return
+        
         check_response = session.get(f"{BASE_URL}/api/pastes/{url}")
         exists = check_response.status_code == 200
 
@@ -178,6 +254,8 @@ def push(file, url, force):
         response = set_paste_content(url, content, session)
         response.raise_for_status()
         click.secho(f"成功推送到 /{url}", fg="green")
+    except ValueError as e:
+        click.secho(f"错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
         click.secho(f"推送失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
@@ -192,13 +270,26 @@ def push(file, url, force):
 def add(text, url):
     session = get_session()
     try:
+        # 先验证slug
+        is_valid, error_msg = validate_slug(url)
+        if not is_valid:
+            click.secho(f"错误: {error_msg}", fg="red")
+            return
+        
         existing_content = get_paste_content(url)
         new_content = existing_content + "\n" + text if existing_content else text
         response = set_paste_content(url, new_content, session)
         response.raise_for_status()
         click.secho(f"成功添加到 /{url}", fg="green")
+    except ValueError as e:
+        click.secho(f"错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
         click.secho(f"添加失败: {str(e)}", fg="red")
+        if hasattr(e, 'response') and e.response:
+            try:
+                click.echo(e.response.json())
+            except:
+                click.echo(e.response.text)
 
 @cli.command(name="del")
 @click.argument("url")
@@ -423,7 +514,7 @@ def run_interactive():
                 print("再见！")
                 break
 
-            parts = user_input.split()
+            parts = shlex.split(user_input)
             if parts:
                 cmd_args = ['pen'] + parts
                 old_argv = sys.argv
