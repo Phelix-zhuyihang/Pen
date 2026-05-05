@@ -62,8 +62,8 @@ git push -u origin master
 2. 点击 Releases
 3. 点击 Draft a new release
 4. 填写版本信息:
-   - **Tag version**: v1.4.0
-   - **Release title**: Pen v1.4.0
+   - **Tag version**: v1.5.1
+   - **Release title**: Pen v1.5.1
    - **Description**: 更新说明
 5. 上传文件:
    - `dist/pen.exe`
