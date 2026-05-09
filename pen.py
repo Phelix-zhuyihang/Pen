@@ -9,8 +9,10 @@ import tempfile
 import subprocess
 import platform
 import shlex
+import webbrowser
+import time
 
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 BASE_URL = "https://server.moxiao.site"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pen_config.json")
 
@@ -136,6 +138,21 @@ def set_paste_content(slug, content, session=None):
     except Exception as e:
         raise e
 
+def track_visit(slug):
+    config = load_config()
+    if "visited" not in config:
+        config["visited"] = []
+    for v in config["visited"]:
+        if v["slug"] == slug:
+            v["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            save_config(config)
+            return
+    config["visited"].append({
+        "slug": slug,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    save_config(config)
+
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
@@ -229,6 +246,7 @@ def pull(url, file, output, address):
 @click.argument("url")
 @click.option("-force", is_flag=True, help="强制覆盖")
 def push(file, url, force):
+    file = os.path.abspath(os.path.expanduser(file))
     if not os.path.exists(file):
         click.secho(f"文件 {file} 不存在", fg="red")
         return
@@ -350,6 +368,7 @@ def log():
 @click.option("-r", is_flag=True, help="只读模式")
 @click.option("-w", is_flag=True, help="写入模式")
 def open_paste(url, r, w):
+    track_visit(url)
     try:
         content = get_paste_content(url)
         if r or not w:
@@ -392,6 +411,7 @@ def logout():
 def status():
     click.echo(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     click.echo(f"版本: {VERSION}")
+    click.echo(f"服务器: {BASE_URL}")
 
     config = load_config()
     if "username" in config:
@@ -410,6 +430,42 @@ def status():
             click.secho("登录状态: 已过期，请重新登录", fg="yellow")
     else:
         click.secho("登录状态: 未登录", fg="yellow")
+
+    try:
+        start = time.time()
+        ping_resp = requests.get(BASE_URL, timeout=5)
+        latency = (time.time() - start) * 1000
+        if ping_resp.status_code == 200 or ping_resp.status_code == 302 or ping_resp.status_code == 301:
+            click.secho(f"连接状态: 正常", fg="green", nl=False)
+            click.echo(f"  ({latency:.0f}ms)")
+        else:
+            click.secho(f"连接状态: 异常", fg="red", nl=False)
+            click.echo(f"  ({latency:.0f}ms, 状态码: {ping_resp.status_code})")
+    except requests.exceptions.ConnectionError:
+        click.secho("连接状态: 无法连接", fg="red")
+        click.secho("延迟: N/A", fg="red")
+    except requests.exceptions.Timeout:
+        click.secho("连接状态: 连接超时", fg="red")
+        click.secho("延迟: N/A", fg="red")
+    except Exception as e:
+        click.secho(f"连接状态: 错误 ({str(e)})", fg="red")
+        click.secho("延迟: N/A", fg="red")
+
+    visited = config.get("visited", [])
+    if visited:
+        click.echo("\n访问记录:")
+        for v in reversed(visited[-10:]):
+            click.echo(f"  /{v['slug']}  ({v['time']})")
+    else:
+        click.echo("\n访问记录: 无")
+
+@cli.command()
+@click.argument("slug")
+def surf(slug):
+    track_visit(slug)
+    url = f"{BASE_URL}/{slug}"
+    click.secho(f"正在打开 {url} ...", fg="cyan")
+    webbrowser.open(url)
 
 @cli.command()
 def init():
@@ -491,7 +547,10 @@ Pen 命令行工具 v{}
       退出登录
 
   status
-      显示状态信息
+      显示状态信息（登录状态、连接情况、延迟、访问记录）
+
+  surf <URL>
+      在浏览器中打开网站
 
   init
       添加到PATH环境变量
@@ -507,7 +566,13 @@ def run_interactive():
 
     while True:
         try:
-            user_input = input("pen> ").strip()
+            cwd = os.getcwd()
+            home = os.path.expanduser("~")
+            if cwd.lower() == home.lower():
+                display_dir = "~"
+            else:
+                display_dir = os.path.basename(cwd) or cwd
+            user_input = input(f"pen [{display_dir}]> ").strip()
             if not user_input:
                 continue
             if user_input.lower() in ['exit', 'quit', 'q']:
@@ -515,15 +580,37 @@ def run_interactive():
                 break
 
             parts = shlex.split(user_input)
-            if parts:
-                cmd_args = ['pen'] + parts
-                old_argv = sys.argv
-                sys.argv = cmd_args
+            if not parts:
+                continue
+
+            if parts[0].lower() == 'cd':
+                if len(parts) < 2:
+                    target = os.path.expanduser("~")
+                else:
+                    target = os.path.expanduser(parts[1])
                 try:
-                    cli()
-                except SystemExit:
-                    pass
-                sys.argv = old_argv
+                    os.chdir(target)
+                    click.secho(f"→ {os.getcwd()}", fg="cyan")
+                except FileNotFoundError:
+                    click.secho(f"目录不存在: {target}", fg="red")
+                except NotADirectoryError:
+                    click.secho(f"不是目录: {target}", fg="red")
+                except PermissionError:
+                    click.secho(f"没有权限访问: {target}", fg="red")
+                continue
+
+            if parts[0].lower() == 'pwd':
+                click.echo(os.getcwd())
+                continue
+
+            cmd_args = ['pen'] + parts
+            old_argv = sys.argv
+            sys.argv = cmd_args
+            try:
+                cli()
+            except SystemExit:
+                pass
+            sys.argv = old_argv
         except KeyboardInterrupt:
             print("\n再见！")
             break

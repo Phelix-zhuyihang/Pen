@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="pen",
-    version="1.0.0",
+    version="1.6.0",
     description="NetCut 粘贴板命令行工具",
     author="Pen CLI",
     packages=[],
