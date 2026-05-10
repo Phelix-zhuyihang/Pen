@@ -12,7 +12,12 @@ import shlex
 import webbrowser
 import time
 
-VERSION = "1.6.0"
+try:
+    from charset_normalizer import from_bytes
+except ImportError:
+    from_bytes = None
+
+VERSION = "1.7.0"
 BASE_URL = "https://server.moxiao.site"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pen_config.json")
 
@@ -41,9 +46,11 @@ def save_cookies(session, username=None):
         config["username"] = username
     save_config(config)
 
-def get_paste_content(slug):
+def get_paste_content(slug, session=None):
+    if session is None:
+        session = get_session()
     try:
-        response = requests.get(f"{BASE_URL}/api/pastes/{slug}")
+        response = session.get(f"{BASE_URL}/api/pastes/{slug}")
         if response.status_code == 200:
             data = response.json()
             if data.get("ok") and "paste" in data:
@@ -94,15 +101,15 @@ def read_file_text(filepath):
         except UnicodeDecodeError:
             pass
 
-    try:
-        from charset_normalizer import from_bytes
-        results = from_bytes(raw_data)
-        if results:
-            best = results.best()
-            if best.encoding:
-                return raw_data.decode(best.encoding)
-    except Exception:
-        pass
+    if from_bytes is not None:
+        try:
+            results = from_bytes(raw_data)
+            if results:
+                best = results.best()
+                if best.encoding:
+                    return raw_data.decode(best.encoding)
+        except Exception:
+            pass
 
     for enc in ['utf-8', 'gbk', 'gb18030', 'gb2312', 'latin-1']:
         try:
@@ -112,31 +119,25 @@ def read_file_text(filepath):
 
     raise ValueError(f"无法识别文件编码: {filepath}")
 
-def set_paste_content(slug, content, session=None):
+def set_paste_content(slug, content, session=None, visibility="public_read"):
     if session is None:
         session = get_session()
-    try:
-        # 先验证slug
-        is_valid, error_msg = validate_slug(slug)
-        if not is_valid:
-            raise ValueError(error_msg)
-        
-        check_response = session.get(f"{BASE_URL}/api/pastes/{slug}")
-        exists = check_response.status_code == 200
+    is_valid, error_msg = validate_slug(slug)
+    if not is_valid:
+        raise ValueError(error_msg)
 
-        if exists:
-            response = session.patch(f"{BASE_URL}/api/pastes/{slug}", json={"contentRawMarkdown": content})
-        else:
-            response = session.post(f"{BASE_URL}/api/pastes", json={
-                "customSlug": slug,
-                "contentRawMarkdown": content,
-                "visibility": "public_read"
-            })
-        return response
-    except ValueError as e:
-        raise e
-    except Exception as e:
-        raise e
+    check_response = session.get(f"{BASE_URL}/api/pastes/{slug}")
+    exists = check_response.status_code == 200
+
+    if exists:
+        response = session.patch(f"{BASE_URL}/api/pastes/{slug}", json={"contentRawMarkdown": content})
+    else:
+        response = session.post(f"{BASE_URL}/api/pastes", json={
+            "customSlug": slug,
+            "contentRawMarkdown": content,
+            "visibility": visibility
+        })
+    return response
 
 def track_visit(slug):
     config = load_config()
@@ -163,11 +164,8 @@ def cli(ctx):
 @cli.command()
 @click.argument("username")
 @click.argument("password")
-@click.option("-email", help="邮箱（可选）")
-def register(username, password, email):
+def register(username, password):
     data = {"username": username, "password": password}
-    if email:
-        data["email"] = email
 
     session = requests.Session()
     try:
@@ -244,8 +242,9 @@ def pull(url, file, output, address):
 @cli.command()
 @click.argument("file")
 @click.argument("url")
-@click.option("-force", is_flag=True, help="强制覆盖")
-def push(file, url, force):
+@click.option("--force", is_flag=True, help="强制覆盖")
+@click.option("-v", "--visibility", type=click.Choice(["public_read", "private"]), default="public_read", help="可见性")
+def push(file, url, force, visibility):
     file = os.path.abspath(os.path.expanduser(file))
     if not os.path.exists(file):
         click.secho(f"文件 {file} 不存在", fg="red")
@@ -257,21 +256,16 @@ def push(file, url, force):
         return
     session = get_session()
     try:
-        is_valid, error_msg = validate_slug(url)
-        if not is_valid:
-            click.secho(f"错误: {error_msg}", fg="red")
-            return
-        
         check_response = session.get(f"{BASE_URL}/api/pastes/{url}")
         exists = check_response.status_code == 200
 
         if exists and not force:
-            click.secho(f"URL /{url} 已存在，使用 -force 参数强制覆盖", fg="yellow")
+            click.secho(f"URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
             return
 
-        response = set_paste_content(url, content, session)
+        response = set_paste_content(url, content, session, visibility)
         response.raise_for_status()
-        click.secho(f"成功推送到 /{url}", fg="green")
+        click.secho(f"成功推送到 /{url} [{visibility}]", fg="green")
     except ValueError as e:
         click.secho(f"错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
@@ -288,14 +282,11 @@ def push(file, url, force):
 def add(text, url):
     session = get_session()
     try:
-        # 先验证slug
-        is_valid, error_msg = validate_slug(url)
-        if not is_valid:
-            click.secho(f"错误: {error_msg}", fg="red")
-            return
-        
-        existing_content = get_paste_content(url)
-        new_content = existing_content + "\n" + text if existing_content else text
+        existing_content = get_paste_content(url, session)
+        if existing_content:
+            new_content = existing_content.rstrip("\n") + "\n" + text
+        else:
+            new_content = text
         response = set_paste_content(url, new_content, session)
         response.raise_for_status()
         click.secho(f"成功添加到 /{url}", fg="green")
@@ -369,14 +360,25 @@ def log():
 @click.option("-w", is_flag=True, help="写入模式")
 def open_paste(url, r, w):
     track_visit(url)
+    session = get_session()
     try:
-        content = get_paste_content(url)
+        response = session.get(f"{BASE_URL}/api/pastes/{url}")
+        if response.status_code != 200:
+            click.secho("URL不存在或无法访问", fg="yellow")
+            return
+        data = response.json()
+        content = data.get("paste", {}).get("contentRawMarkdown", "")
+        permissions = data.get("permissions", {})
+
         if r or not w:
             if content:
                 click.echo(content)
             else:
-                click.secho("URL不存在或内容为空", fg="yellow")
+                click.secho("内容为空", fg="yellow")
         else:
+            if not permissions.get("canEdit"):
+                click.secho("你没有编辑此粘贴的权限（需要登录为创建者）", fg="red")
+                return
             with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
                 f.write(content)
                 temp_name = f.name
@@ -463,9 +465,53 @@ def status():
 @click.argument("slug")
 def surf(slug):
     track_visit(slug)
-    url = f"{BASE_URL}/{slug}"
+    url = f"{BASE_URL}/p/{slug}"
     click.secho(f"正在打开 {url} ...", fg="cyan")
     webbrowser.open(url)
+
+@cli.command()
+@click.argument("url")
+@click.option("--force", is_flag=True, help="强制覆盖")
+@click.option("-v", "--visibility", type=click.Choice(["public_read", "private"]), default="public_read", help="可见性")
+def clip(url, force, visibility):
+    """将剪贴板内容推送到URL"""
+    try:
+        import pyperclip
+    except ImportError:
+        click.secho("需要安装 pyperclip: pip install pyperclip", fg="red")
+        return
+
+    try:
+        text = pyperclip.paste()
+    except Exception as e:
+        click.secho(f"无法读取剪贴板: {str(e)}", fg="red")
+        return
+
+    if not text:
+        click.secho("剪贴板为空", fg="yellow")
+        return
+
+    session = get_session()
+    try:
+        check_response = session.get(f"{BASE_URL}/api/pastes/{url}")
+        exists = check_response.status_code == 200
+
+        if exists and not force:
+            click.secho(f"URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
+            return
+
+        response = set_paste_content(url, text, session, visibility)
+        response.raise_for_status()
+        click.secho(f"成功将剪贴板内容推送到 /{url} [{visibility}]", fg="green")
+    except ValueError as e:
+        click.secho(f"错误: {str(e)}", fg="red")
+    except requests.exceptions.RequestException as e:
+        click.secho(f"推送失败: {str(e)}", fg="red")
+        if hasattr(e, 'response') and e.response:
+            try:
+                click.echo(e.response.json())
+            except:
+                click.echo(e.response.text)
 
 @cli.command()
 def init():
@@ -519,20 +565,20 @@ Pen 命令行工具 v{}
 
 命令列表:
 
-  register <username> <password> [-email <email>]
+  register <username> <password>
       注册新用户
 
   login <username> <password>
       登录用户
 
+  push <File> <URL> [--force] [-v public_read|private]
+      推送文件内容到URL，--force强制覆盖
+
   pull <URL> [<filename>] [-o <filename>]
       拉取URL上的文本，默认保存到Desktop/URL.txt
 
-  push <File> <URL> [-force]
-      推送文件内容到URL，-force强制覆盖
-
   add <text> <URL>
-      在URL末尾添加文本，不存在则创建
+      在URL末尾追加文本，不存在则创建
 
   del <URL>
       删除URL
@@ -540,8 +586,14 @@ Pen 命令行工具 v{}
   log
       显示用户创建的所有粘贴列表
 
-  open <URL> [-r/-w]
-      打开URL编辑，-r只读，-w写入
+  open <URL> [-r | -w]
+      打开URL，-r只读（默认），-w编辑
+
+  surf <URL>
+      在浏览器中打开粘贴页面
+
+  clip <URL> [--force] [-v public_read|private]
+      将剪贴板内容推送到URL
 
   logout
       退出登录
@@ -549,11 +601,8 @@ Pen 命令行工具 v{}
   status
       显示状态信息（登录状态、连接情况、延迟、访问记录）
 
-  surf <URL>
-      在浏览器中打开网站
-
   init
-      添加到PATH环境变量
+      将pen添加到系统PATH环境变量
 
   help
       显示此帮助信息
