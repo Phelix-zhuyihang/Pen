@@ -17,8 +17,8 @@ try:
 except ImportError:
     from_bytes = None
 
-VERSION = "1.7.0"
-BASE_URL = "https://server.moxiao.site"
+VERSION = "1.8.0"
+BASE_URL = "https://paste.moxiao.site"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pen_config.json")
 
 def load_config():

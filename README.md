@@ -1,12 +1,12 @@
 # Pen - NetCut 粘贴板命令行工具
 
-[![Release](https://img.shields.io/badge/version-v1.7.0-blue.svg)](https://github.com/)
+[![Release](https://img.shields.io/badge/version-v1.8.0-blue.svg)](https://github.com/)
 [![Python](https://img.shields.io/badge/python-3.8%2B-brightgreen.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 
 ## 简介
 
-Pen 是一个用于与 **server.moxiao.site** 粘贴板网站交互的命令行工具。它提供了完整的注册、登录、推送、拉取、编辑等功能。
+Pen 是一个用于与 **paste.moxiao.site** 粘贴板网站交互的命令行工具。它提供了完整的注册、登录、推送、拉取、编辑等功能。
 
 ## 特性
 
@@ -167,7 +167,7 @@ pen surf <URL>
 **示例:**
 
 ```bash
-pen surf mypage          # 在浏览器中打开 https://server.moxiao.site/p/mypage
+pen surf mypage          # 在浏览器中打开 https://paste.moxiao.site/p/mypage
 ```
 
 ### 剪贴板推送
@@ -267,7 +267,7 @@ python pen.py status
 
 ## 致谢
 
-- [NetCut](https://server.moxiao.site) - 提供粘贴板服务
+- [NetCut](https://paste.moxiao.site) - 提供粘贴板服务
 - [Click](https://click.palletsprojects.com) - 命令行框架
 - [Requests](https://requests.readthedocs.io) - HTTP 库
 
