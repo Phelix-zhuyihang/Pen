@@ -17,7 +17,7 @@ try:
 except ImportError:
     from_bytes = None
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 BASE_URL = "https://paste.moxiao.site"
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pen_config.json")
 
@@ -119,7 +119,7 @@ def read_file_text(filepath):
 
     raise ValueError(f"无法识别文件编码: {filepath}")
 
-def set_paste_content(slug, content, session=None, visibility="public_read"):
+def set_paste_content(slug, content, session=None, visibility="public_read", expires_at=None):
     if session is None:
         session = get_session()
     is_valid, error_msg = validate_slug(slug)
@@ -129,14 +129,18 @@ def set_paste_content(slug, content, session=None, visibility="public_read"):
     check_response = session.get(f"{BASE_URL}/api/pastes/{slug}")
     exists = check_response.status_code == 200
 
+    body = {
+        "contentRawMarkdown": content,
+        "visibility": visibility,
+    }
+    if expires_at:
+        body["expiresAt"] = expires_at
+
     if exists:
-        response = session.patch(f"{BASE_URL}/api/pastes/{slug}", json={"contentRawMarkdown": content})
+        response = session.patch(f"{BASE_URL}/api/pastes/{slug}", json=body)
     else:
-        response = session.post(f"{BASE_URL}/api/pastes", json={
-            "customSlug": slug,
-            "contentRawMarkdown": content,
-            "visibility": visibility
-        })
+        body["customSlug"] = slug
+        response = session.post(f"{BASE_URL}/api/pastes", json=body)
     return response
 
 def track_visit(slug):
@@ -164,20 +168,31 @@ def cli(ctx):
 @cli.command()
 @click.argument("username")
 @click.argument("password")
-def register(username, password):
+@click.option("-e", "--email", default=None, help="邮箱（可选）")
+def register(username, password, email):
+    """注册新用户"""
+    if len(password) < 8:
+        click.secho("密码长度至少 8 个字符", fg="red")
+        return
+
     data = {"username": username, "password": password}
+    if email:
+        data["email"] = email
 
     session = requests.Session()
     try:
         response = session.post(f"{BASE_URL}/api/auth/register", json=data)
-        response.raise_for_status()
         result = response.json()
 
-        if result.get("ok"):
+        if response.status_code == 200 and result.get("ok"):
             save_cookies(session, username)
-            click.secho(f"注册成功！已登录为 {username}", fg="green")
+            user = result.get("user", {})
+            click.secho(f"注册成功！已登录为 {user.get('username', username)}", fg="green")
+        elif response.status_code == 429:
+            click.secho("操作过于频繁，请稍后再试", fg="red")
         else:
-            click.secho("注册成功！", fg="green")
+            msg = result.get("statusMessage", result.get("message", "未知错误"))
+            click.secho(f"注册失败: {msg}", fg="red")
     except requests.exceptions.RequestException as e:
         click.secho(f"注册失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
@@ -190,20 +205,24 @@ def register(username, password):
 @click.argument("username")
 @click.argument("password")
 def login(username, password):
+    """登录用户"""
     session = requests.Session()
     try:
         response = session.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": username,
             "password": password
         })
-        response.raise_for_status()
         result = response.json()
 
-        if result.get("ok"):
+        if response.status_code == 200 and result.get("ok"):
             save_cookies(session, username)
-            click.secho(f"登录成功！欢迎 {username}", fg="green")
+            user = result.get("user", {})
+            click.secho(f"登录成功！欢迎 {user.get('username', username)}", fg="green")
+        elif response.status_code == 429:
+            click.secho("操作过于频繁，请稍后再试", fg="red")
         else:
-            click.secho("登录成功！", fg="green")
+            msg = result.get("statusMessage", result.get("message", "未知错误"))
+            click.secho(f"登录失败: {msg}", fg="red")
     except requests.exceptions.RequestException as e:
         click.secho(f"登录失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
@@ -244,7 +263,9 @@ def pull(url, file, output, address):
 @click.argument("url")
 @click.option("--force", is_flag=True, help="强制覆盖")
 @click.option("-v", "--visibility", type=click.Choice(["public_read", "private"]), default="public_read", help="可见性")
-def push(file, url, force, visibility):
+@click.option("--expires-at", default=None, help="过期时间 (ISO格式，如 2026-12-31T23:59:59.000Z)")
+def push(file, url, force, visibility, expires_at):
+    """推送文件内容到URL"""
     file = os.path.abspath(os.path.expanduser(file))
     if not os.path.exists(file):
         click.secho(f"文件 {file} 不存在", fg="red")
@@ -263,9 +284,10 @@ def push(file, url, force, visibility):
             click.secho(f"URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
             return
 
-        response = set_paste_content(url, content, session, visibility)
+        response = set_paste_content(url, content, session, visibility, expires_at)
         response.raise_for_status()
-        click.secho(f"成功推送到 /{url} [{visibility}]", fg="green")
+        extra = f"，过期: {expires_at}" if expires_at else ""
+        click.secho(f"成功推送到 /{url} [{visibility}]{extra}", fg="green")
     except ValueError as e:
         click.secho(f"错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
@@ -335,6 +357,7 @@ def log():
                 slug = paste.get("id", "N/A")
                 updated_at = paste.get("updatedAt", "N/A")
                 visibility = paste.get("visibility", "N/A")
+                expired = paste.get("expired", False)
 
                 if updated_at != "N/A":
                     try:
@@ -348,6 +371,8 @@ def log():
                 click.echo(f"{i}. /{slug}")
                 click.echo(f"   更新: {updated_str}")
                 click.echo(f"   可见性: {visibility}")
+                if expired:
+                    click.secho(f"   状态: 已过期", fg="red")
                 click.echo("")
         else:
             click.secho("获取失败", fg="red")
@@ -359,6 +384,7 @@ def log():
 @click.option("-r", is_flag=True, help="只读模式")
 @click.option("-w", is_flag=True, help="写入模式")
 def open_paste(url, r, w):
+    """打开并（可选）编辑粘贴"""
     track_visit(url)
     session = get_session()
     try:
@@ -367,7 +393,8 @@ def open_paste(url, r, w):
             click.secho("URL不存在或无法访问", fg="yellow")
             return
         data = response.json()
-        content = data.get("paste", {}).get("contentRawMarkdown", "")
+        paste = data.get("paste", {})
+        content = paste.get("contentRawMarkdown", "")
         permissions = data.get("permissions", {})
 
         if r or not w:
@@ -377,7 +404,7 @@ def open_paste(url, r, w):
                 click.secho("内容为空", fg="yellow")
         else:
             if not permissions.get("canEdit"):
-                click.secho("你没有编辑此粘贴的权限（需要登录为创建者）", fg="red")
+                click.secho("你没有编辑此粘贴的权限", fg="red")
                 return
             with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
                 f.write(content)
@@ -401,13 +428,21 @@ def open_paste(url, r, w):
 
 @cli.command()
 def logout():
+    """退出登录"""
     config = load_config()
+    session = get_session()
+    try:
+        response = session.post(f"{BASE_URL}/api/auth/logout")
+        if response.status_code == 200:
+            click.secho("已从服务端退出登录", fg="green")
+    except requests.exceptions.RequestException:
+        pass
     if "cookies" in config:
         del config["cookies"]
     if "username" in config:
         del config["username"]
     save_config(config)
-    click.secho("已退出登录", fg="green")
+    click.secho("本地登录状态已清除", fg="green")
 
 @cli.command()
 def status():
@@ -473,7 +508,8 @@ def surf(slug):
 @click.argument("url")
 @click.option("--force", is_flag=True, help="强制覆盖")
 @click.option("-v", "--visibility", type=click.Choice(["public_read", "private"]), default="public_read", help="可见性")
-def clip(url, force, visibility):
+@click.option("--expires-at", default=None, help="过期时间 (ISO格式，如 2026-12-31T23:59:59.000Z)")
+def clip(url, force, visibility, expires_at):
     """将剪贴板内容推送到URL"""
     try:
         import pyperclip
@@ -500,9 +536,10 @@ def clip(url, force, visibility):
             click.secho(f"URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
             return
 
-        response = set_paste_content(url, text, session, visibility)
+        response = set_paste_content(url, text, session, visibility, expires_at)
         response.raise_for_status()
-        click.secho(f"成功将剪贴板内容推送到 /{url} [{visibility}]", fg="green")
+        extra = f"，过期: {expires_at}" if expires_at else ""
+        click.secho(f"成功将剪贴板内容推送到 /{url} [{visibility}]{extra}", fg="green")
     except ValueError as e:
         click.secho(f"错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
@@ -565,14 +602,14 @@ Pen 命令行工具 v{}
 
 命令列表:
 
-  register <username> <password>
-      注册新用户
+  register <username> <password> [-e <email>]
+      注册新用户，密码至少8位，可提供邮箱
 
   login <username> <password>
       登录用户
 
-  push <File> <URL> [--force] [-v public_read|private]
-      推送文件内容到URL，--force强制覆盖
+  push <File> <URL> [--force] [-v public_read|private] [--expires-at <ISO>]
+      推送文件内容到URL，--force强制覆盖，可设过期时间
 
   pull <URL> [<filename>] [-o <filename>]
       拉取URL上的文本，默认保存到Desktop/URL.txt
@@ -581,7 +618,7 @@ Pen 命令行工具 v{}
       在URL末尾追加文本，不存在则创建
 
   del <URL>
-      删除URL
+      删除URL（需登录且为创建者）
 
   log
       显示用户创建的所有粘贴列表
@@ -592,11 +629,11 @@ Pen 命令行工具 v{}
   surf <URL>
       在浏览器中打开粘贴页面
 
-  clip <URL> [--force] [-v public_read|private]
+  clip <URL> [--force] [-v public_read|private] [--expires-at <ISO>]
       将剪贴板内容推送到URL
 
   logout
-      退出登录
+      退出登录（同步清除服务端和本地状态）
 
   status
       显示状态信息（登录状态、连接情况、延迟、访问记录）
