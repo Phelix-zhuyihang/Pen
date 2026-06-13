@@ -562,15 +562,16 @@ def run_interactive():
             config = load_config()
             username = config.get("username", None)
             if username:
-                prompt = (click.style(username, fg="green") +
-                          click.style("@pen", fg="bright_black") + " " +
-                          click.style(display_dir, fg="yellow") +
-                          click.style("> ", fg="bright_black"))
+                click.echo(click.style(username, fg="green") +
+                           click.style("@pen", fg="bright_black") + " " +
+                           click.style(display_dir, fg="yellow") +
+                           click.style("> ", fg="bright_black"), nl=False)
             else:
-                prompt = (click.style("pen", fg="cyan") + " " +
-                          click.style(display_dir, fg="yellow") +
-                          click.style("> ", fg="bright_black"))
-            user_input = input(prompt).strip()
+                click.echo(click.style("pen", fg="cyan") + " " +
+                           click.style(display_dir, fg="yellow") +
+                           click.style("> ", fg="bright_black"), nl=False)
+            sys.stdout.flush()
+            user_input = input().strip()
             if not user_input:
                 continue
             if user_input.lower() in ['exit', 'quit', 'q']:
