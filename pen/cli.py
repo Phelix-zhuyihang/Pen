@@ -33,7 +33,7 @@ def cli(ctx):
 def register(username, password, email):
     """注册新用户"""
     if len(password) < 8:
-        click.secho("密码长度至少 8 个字符", fg="red")
+        click.secho("✗ 密码长度至少 8 个字符", fg="red")
         return
 
     data = {"username": username, "password": password}
@@ -48,14 +48,14 @@ def register(username, password, email):
         if response.status_code == 200 and result.get("ok"):
             save_cookies(session, username)
             user = result.get("user", {})
-            click.secho(f"注册成功！已登录为 {user.get('username', username)}", fg="green")
+            click.secho(f"✓ 注册成功！已登录为 {user.get('username', username)}", fg="green")
         elif response.status_code == 429:
-            click.secho("操作过于频繁，请稍后再试", fg="red")
+            click.secho("⚠ 操作过于频繁，请稍后再试", fg="red")
         else:
             msg = result.get("statusMessage", result.get("message", "未知错误"))
-            click.secho(f"注册失败: {msg}", fg="red")
+            click.secho(f"✗ 注册失败: {msg}", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"注册失败: {str(e)}", fg="red")
+        click.secho(f"✗ 注册失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
             try:
                 click.echo(e.response.json())
@@ -79,14 +79,14 @@ def login(username, password):
         if response.status_code == 200 and result.get("ok"):
             save_cookies(session, username)
             user = result.get("user", {})
-            click.secho(f"登录成功！欢迎 {user.get('username', username)}", fg="green")
+            click.secho(f"✓ 登录成功！欢迎 {user.get('username', username)}", fg="green")
         elif response.status_code == 429:
-            click.secho("操作过于频繁，请稍后再试", fg="red")
+            click.secho("⚠ 操作过于频繁，请稍后再试", fg="red")
         else:
             msg = result.get("statusMessage", result.get("message", "未知错误"))
-            click.secho(f"登录失败: {msg}", fg="red")
+            click.secho(f"✗ 登录失败: {msg}", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"登录失败: {str(e)}", fg="red")
+        click.secho(f"✗ 登录失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
             try:
                 click.echo(e.response.json())
@@ -102,7 +102,7 @@ def pull(url, file, output):
     try:
         content = get_paste_content(url)
         if content == "":
-            click.secho(f"无法获取内容或URL不存在: {url}", fg="yellow")
+            click.secho(f"⚠ 无法获取内容或URL不存在: {url}", fg="yellow")
             return
 
         if output:
@@ -116,9 +116,9 @@ def pull(url, file, output):
             output_path = os.path.join(desktop, f"{url}.txt")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
-        click.secho(f"成功拉取到 {output_path}", fg="green")
+        click.secho(f"✓ 成功拉取到 {output_path}", fg="green")
     except requests.exceptions.RequestException as e:
-        click.secho(f"拉取失败: {str(e)}", fg="red")
+        click.secho(f"✗ 拉取失败: {str(e)}", fg="red")
 
 
 @cli.command()
@@ -131,12 +131,12 @@ def push(file, url, force, visibility, expires_at):
     """推送文件内容到URL"""
     file = os.path.abspath(os.path.expanduser(file))
     if not os.path.exists(file):
-        click.secho(f"文件 {file} 不存在", fg="red")
+        click.secho(f"✗ 文件 {file} 不存在", fg="red")
         return
     try:
         content = read_file_text(file)
     except ValueError as e:
-        click.secho(f"错误: {str(e)}", fg="red")
+        click.secho(f"✗ 错误: {str(e)}", fg="red")
         return
     session = get_session()
     try:
@@ -144,17 +144,17 @@ def push(file, url, force, visibility, expires_at):
         exists = check_response.status_code == 200
 
         if exists and not force:
-            click.secho(f"URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
+            click.secho(f"⚠ URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
             return
 
         response = set_paste_content(url, content, session, visibility, expires_at)
         response.raise_for_status()
         extra = f"，过期: {expires_at}" if expires_at else ""
-        click.secho(f"成功推送到 /{url} [{visibility}]{extra}", fg="green")
+        click.secho(f"✓ 成功推送到 /{url} [{visibility}]{extra}", fg="green")
     except ValueError as e:
-        click.secho(f"错误: {str(e)}", fg="red")
+        click.secho(f"✗ 错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"推送失败: {str(e)}", fg="red")
+        click.secho(f"✗ 推送失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
             try:
                 click.echo(e.response.json())
@@ -178,11 +178,11 @@ def add(text, url, expires_at):
         response = set_paste_content(url, new_content, session, expires_at=expires_at)
         response.raise_for_status()
         extra = f"，过期: {expires_at}" if expires_at else ""
-        click.secho(f"成功添加到 /{url}{extra}", fg="green")
+        click.secho(f"✓ 成功添加到 /{url}{extra}", fg="green")
     except ValueError as e:
-        click.secho(f"错误: {str(e)}", fg="red")
+        click.secho(f"✗ 错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"添加失败: {str(e)}", fg="red")
+        click.secho(f"✗ 添加失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
             try:
                 click.echo(e.response.json())
@@ -198,46 +198,52 @@ def delete_command(url):
     try:
         response = session.delete(f"{BASE_URL}/api/pastes/{url}")
         if response.status_code == 200:
-            click.secho(f"成功删除 /{url}", fg="green")
+            click.secho(f"✓ 成功删除 /{url}", fg="green")
         elif response.status_code == 401:
             result = response.json()
             msg = result.get("statusMessage", result.get("message", ""))
-            click.secho(f"删除失败: {msg}", fg="red")
+            click.secho(f"✗ 删除失败: {msg}", fg="red")
         else:
             result = response.json()
             msg = result.get("statusMessage", result.get("message", "未知错误"))
-            click.secho(f"删除失败: {msg}", fg="red")
+            click.secho(f"✗ 删除失败: {msg}", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"删除失败: {str(e)}", fg="red")
+        click.secho(f"✗ 删除失败: {str(e)}", fg="red")
 
 
 @cli.command()
 def log():
     config = load_config()
     if "username" not in config:
-        click.secho("请先登录", fg="red")
+        click.secho("⚠ 请先登录", fg="red")
         return
 
     session = get_session()
     try:
         response = session.get(f"{BASE_URL}/api/pastes/mine")
         if response.status_code == 401:
-            click.secho("登录已过期，请重新登录", fg="red")
+            click.secho("✗ 登录已过期，请重新登录", fg="red")
             return
         if response.status_code != 200:
-            click.secho(f"获取失败: {response.status_code}", fg="red")
+            click.secho(f"✗ 获取失败: {response.status_code}", fg="red")
             return
         data = response.json()
 
         if data.get("ok") and "pastes" in data:
             pastes = data["pastes"]
             if not pastes:
-                click.secho("暂无粘贴", fg="yellow")
+                click.secho("⚠ 暂无粘贴", fg="yellow")
                 return
 
-            click.echo(f"找到 {len(pastes)} 个粘贴:\n")
+            click.echo(f"\n{click.style(' 找到 ' + str(len(pastes)) + ' 个粘贴', fg='cyan', bold=True)}\n")
+            # Header
+            header = f"  {'#':<3} {'SLUG':<20} {'更新':<18} {'可见性':<12} {'状态'}"
+            click.secho(header, fg="bright_black", bold=True)
+            click.secho(f"  {'─'*3} {'─'*20} {'─'*18} {'─'*12} {'─'*6}", fg="bright_black")
             for i, paste in enumerate(pastes, 1):
                 slug = paste.get("id", "N/A")
+                if len(slug) > 18:
+                    slug = slug[:17] + "…"
                 updated_at = paste.get("updatedAt", "N/A")
                 visibility = paste.get("visibility", "N/A")
                 expired = paste.get("expired", False)
@@ -251,16 +257,17 @@ def log():
                 else:
                     updated_str = updated_at
 
-                click.echo(f"{i}. /{slug}")
-                click.echo(f"   更新: {updated_str}")
-                click.echo(f"   可见性: {visibility}")
-                if expired:
-                    click.secho(f"   状态: 已过期", fg="red")
-                click.echo("")
+                vis_str = "公开" if visibility == "public_read" else "私有"
+                status_str = click.style("已过期", fg="red") if expired else click.style("正常", fg="green")
+
+                row = f"  {i:<3} {slug:<20} {updated_str:<18} {vis_str:<12} "
+                click.echo(row, nl=False)
+                click.echo(status_str)
+            click.echo("")
         else:
-            click.secho("获取失败", fg="red")
+            click.secho("✗ 获取失败", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"获取失败: {str(e)}", fg="red")
+        click.secho(f"✗ 获取失败: {str(e)}", fg="red")
 
 
 @cli.command(name="open")
@@ -274,7 +281,7 @@ def open_paste(url, r, w):
     try:
         response = session.get(f"{BASE_URL}/api/pastes/{url}")
         if response.status_code != 200:
-            click.secho("URL不存在或无法访问", fg="yellow")
+            click.secho("⚠ URL不存在或无法访问", fg="yellow")
             return
         data = response.json()
         paste = data.get("paste", {})
@@ -285,10 +292,10 @@ def open_paste(url, r, w):
             if content:
                 click.echo(content)
             else:
-                click.secho("内容为空", fg="yellow")
+                click.secho("⚠ 内容为空", fg="yellow")
         else:
             if not permissions.get("canEdit"):
-                click.secho("你没有编辑此粘贴的权限", fg="red")
+                click.secho("✗ 你没有编辑此粘贴的权限", fg="red")
                 return
             with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
                 f.write(content)
@@ -301,14 +308,14 @@ def open_paste(url, r, w):
                 session = get_session()
                 response = set_paste_content(url, new_content, session)
                 response.raise_for_status()
-                click.secho(f"成功更新 /{url}", fg="green")
+                click.secho(f"✓ 成功更新 /{url}", fg="green")
             except requests.exceptions.RequestException as e:
-                click.secho(f"更新失败: {str(e)}", fg="red")
+                click.secho(f"✗ 更新失败: {str(e)}", fg="red")
             finally:
                 if os.path.exists(temp_name):
                     os.unlink(temp_name)
     except requests.exceptions.RequestException as e:
-        click.secho(f"获取失败: {str(e)}", fg="red")
+        click.secho(f"✗ 获取失败: {str(e)}", fg="red")
 
 
 @cli.command()
@@ -319,7 +326,7 @@ def logout():
     try:
         response = session.post(f"{BASE_URL}/api/auth/logout")
         if response.status_code == 200:
-            click.secho("已从服务端退出登录", fg="green")
+            click.secho("✓ 已从服务端退出登录", fg="green")
     except requests.exceptions.RequestException:
         pass
     if "cookies" in config:
@@ -327,15 +334,21 @@ def logout():
     if "username" in config:
         del config["username"]
     save_config(config)
-    click.secho("本地登录状态已清除", fg="green")
+    click.secho("✓ 本地登录状态已清除", fg="green")
 
 
 @cli.command()
 def status():
-    click.echo(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    click.echo(f"版本: {VERSION}")
-    click.echo(f"服务器: {BASE_URL}")
+    """显示状态信息"""
+    sep = click.style("─" * 40, fg="bright_black")
 
+    click.secho(f"\n{' Pen v' + VERSION + ' ':=^40}", fg="cyan", bold=True)
+    click.echo(f"  时间:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    click.echo(f"  服务器: {BASE_URL}")
+
+    # ── 账户 ──
+    click.echo(f"\n{sep}")
+    click.secho("  账户", fg="cyan", bold=True)
     config = load_config()
     if "username" in config:
         session = get_session()
@@ -344,43 +357,44 @@ def status():
             if me_response.status_code == 200:
                 data = me_response.json()
                 if data.get("loggedIn"):
-                    click.secho(f"登录状态: 已登录 ({config['username']})", fg="green")
+                    click.secho(f"  ✓ 已登录 ({config['username']})", fg="green")
                 else:
-                    click.secho("登录状态: 已过期，请重新登录", fg="yellow")
+                    click.secho(f"  ✗ 已过期，请重新登录", fg="red")
             else:
-                click.secho("登录状态: 已过期，请重新登录", fg="yellow")
+                click.secho(f"  ✗ 已过期，请重新登录", fg="red")
         except:
-            click.secho("登录状态: 已过期，请重新登录", fg="yellow")
+            click.secho(f"  ✗ 已过期，请重新登录", fg="red")
     else:
-        click.secho("登录状态: 未登录", fg="yellow")
+        click.secho(f"  ⚠ 未登录", fg="yellow")
 
+    # ── 连接 ──
+    click.echo(f"\n{sep}")
+    click.secho("  连接", fg="cyan", bold=True)
     try:
         start = time.time()
         ping_resp = requests.get(BASE_URL, timeout=5)
         latency = (time.time() - start) * 1000
         if ping_resp.status_code == 200 or ping_resp.status_code == 302 or ping_resp.status_code == 301:
-            click.secho(f"连接状态: 正常", fg="green", nl=False)
-            click.echo(f"  ({latency:.0f}ms)")
+            click.secho(f"  ✓ 正常  ({latency:.0f}ms)", fg="green")
         else:
-            click.secho(f"连接状态: 异常", fg="red", nl=False)
-            click.echo(f"  ({latency:.0f}ms, 状态码: {ping_resp.status_code})")
+            click.secho(f"  ✗ 异常  ({latency:.0f}ms, {ping_resp.status_code})", fg="red")
     except requests.exceptions.ConnectionError:
-        click.secho("连接状态: 无法连接", fg="red")
-        click.secho("延迟: N/A", fg="red")
+        click.secho(f"  ✗ 无法连接", fg="red")
     except requests.exceptions.Timeout:
-        click.secho("连接状态: 连接超时", fg="red")
-        click.secho("延迟: N/A", fg="red")
+        click.secho(f"  ✗ 连接超时", fg="red")
     except Exception as e:
-        click.secho(f"连接状态: 错误 ({str(e)})", fg="red")
-        click.secho("延迟: N/A", fg="red")
+        click.secho(f"  ✗ 错误 ({str(e)})", fg="red")
 
+    # ── 历史 ──
+    click.echo(f"\n{sep}")
+    click.secho("  访问记录", fg="cyan", bold=True)
     visited = config.get("visited", [])
     if visited:
-        click.echo("\n访问记录:")
         for v in reversed(visited[-10:]):
-            click.echo(f"  /{v['slug']}  ({v['time']})")
+            click.echo(f"  /{v['slug']:<20} {v['time']}")
     else:
-        click.echo("\n访问记录: 无")
+        click.secho(f"  (无)", fg="bright_black")
+    click.echo("")
 
 
 @cli.command()
@@ -402,17 +416,17 @@ def clip(url, force, visibility, expires_at):
     try:
         import pyperclip
     except ImportError:
-        click.secho("需要安装 pyperclip: pip install pyperclip", fg="red")
+        click.secho("✗ 需要安装 pyperclip: pip install pyperclip", fg="red")
         return
 
     try:
         text = pyperclip.paste()
     except Exception as e:
-        click.secho(f"无法读取剪贴板: {str(e)}", fg="red")
+        click.secho(f"✗ 无法读取剪贴板: {str(e)}", fg="red")
         return
 
     if not text:
-        click.secho("剪贴板为空", fg="yellow")
+        click.secho("⚠ 剪贴板为空", fg="yellow")
         return
 
     session = get_session()
@@ -421,17 +435,17 @@ def clip(url, force, visibility, expires_at):
         exists = check_response.status_code == 200
 
         if exists and not force:
-            click.secho(f"URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
+            click.secho(f"⚠ URL /{url} 已存在，使用 --force 参数强制覆盖", fg="yellow")
             return
 
         response = set_paste_content(url, text, session, visibility, expires_at)
         response.raise_for_status()
         extra = f"，过期: {expires_at}" if expires_at else ""
-        click.secho(f"成功将剪贴板内容推送到 /{url} [{visibility}]{extra}", fg="green")
+        click.secho(f"✓ 成功将剪贴板内容推送到 /{url} [{visibility}]{extra}", fg="green")
     except ValueError as e:
-        click.secho(f"错误: {str(e)}", fg="red")
+        click.secho(f"✗ 错误: {str(e)}", fg="red")
     except requests.exceptions.RequestException as e:
-        click.secho(f"推送失败: {str(e)}", fg="red")
+        click.secho(f"✗ 推送失败: {str(e)}", fg="red")
         if hasattr(e, 'response') and e.response:
             try:
                 click.echo(e.response.json())
@@ -487,57 +501,40 @@ def init():
 
 @cli.command(name="help")
 def help_command():
-    help_text = """
-Pen 命令行工具 v{}
+    """显示帮助"""
+    B = click.style  # shorthand
+    sep = B("─" * 44, fg="bright_black")
 
-命令列表:
+    click.echo("")
+    click.secho(f"  Pen 命令行工具 v{VERSION}", fg="cyan", bold=True)
+    click.echo("")
 
-  register <username> <password> [-e <email>]
-      注册新用户，密码至少8位，可提供邮箱
+    click.secho("  账户", fg="cyan", bold=True)
+    click.echo(sep)
+    click.echo(f"  {B('register', 'green'):<30} 注册新用户（密码至少8位）")
+    click.echo(f"  {B('login', 'green'):<30} 登录用户")
+    click.echo(f"  {B('logout', 'green'):<30} 退出登录")
+    click.echo("")
 
-  login <username> <password>
-      登录用户
+    click.secho("  粘贴", fg="cyan", bold=True)
+    click.echo(sep)
+    click.echo(f"  {B('push', 'green'):<30} 推送文件到URL [--force] [--expires-at]")
+    click.echo(f"  {B('pull', 'green'):<30} 拉取URL内容到本地")
+    click.echo(f"  {B('add', 'green'):<30} 追加文本到URL [--expires-at]")
+    click.echo(f"  {B('del', 'green'):<30} 删除URL")
+    click.echo(f"  {B('open', 'green'):<30} 打开并编辑 [-r 只读 | -w 写入]")
+    click.echo(f"  {B('surf', 'green'):<30} 浏览器打开粘贴页面")
+    click.echo(f"  {B('clip', 'green'):<30} 推送剪贴板内容 [--expires-at]")
+    click.echo(f"  {B('log', 'green'):<30} 列出我的所有粘贴")
+    click.echo("")
 
-  push <File> <URL> [--force] [-v public_read|private] [--expires-at <ISO>]
-      推送文件内容到URL，--force强制覆盖，可设过期时间
-
-  pull <URL> [<filename>] [-o <filename>]
-      拉取URL上的文本，默认保存到Desktop/URL.txt
-
-  add <text> <URL> [--expires-at <ISO>]
-      在URL末尾追加文本，不存在则创建，可设过期时间
-
-  del <URL>
-      删除URL（需登录且为创建者）
-
-  log
-      显示用户创建的所有粘贴列表
-
-  open <URL> [-r | -w]
-      打开URL，-r只读（默认），-w编辑
-
-  surf <URL>
-      在浏览器中打开粘贴页面
-
-  clip <URL> [--force] [-v public_read|private] [--expires-at <ISO>]
-      将剪贴板内容推送到URL
-
-  logout
-      退出登录（同步清除服务端和本地状态）
-
-  status
-      显示状态信息（登录状态、连接情况、延迟、访问记录）
-
-  init
-      将pen添加到系统PATH环境变量
-
-  help
-      显示此帮助信息
-
-  completion
-      生成 shell 自动补全脚本
-""".format(VERSION)
-    click.echo(help_text)
+    click.secho("  系统", fg="cyan", bold=True)
+    click.echo(sep)
+    click.echo(f"  {B('status', 'green'):<30} 显示登录/连接/访问记录")
+    click.echo(f"  {B('init', 'green'):<30} 添加到系统 PATH")
+    click.echo(f"  {B('completion', 'green'):<30} 生成 shell 补全脚本")
+    click.echo(f"  {B('help', 'green'):<30} 显示此帮助")
+    click.echo("")
 
 
 @cli.command(name="completion")
@@ -631,7 +628,7 @@ def run_interactive():
                     text = read_file_text(filepath)
                     click.echo(text)
                 except ValueError as e:
-                    click.secho(f"错误: {str(e)}", fg="red")
+                    click.secho(f"✗ 错误: {str(e)}", fg="red")
                 except FileNotFoundError:
                     click.secho(f"文件不存在: {filepath}", fg="red")
                 continue
