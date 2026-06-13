@@ -221,7 +221,12 @@ def log():
     session = get_session()
     try:
         response = session.get(f"{BASE_URL}/api/pastes/mine")
-        response.raise_for_status()
+        if response.status_code == 401:
+            click.secho("登录已过期，请重新登录", fg="red")
+            return
+        if response.status_code != 200:
+            click.secho(f"获取失败: {response.status_code}", fg="red")
+            return
         data = response.json()
 
         if data.get("ok") and "pastes" in data:
