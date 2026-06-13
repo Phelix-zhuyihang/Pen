@@ -546,9 +546,9 @@ def shell_completion():
 
 
 def run_interactive():
-    print(f"Pen 命令行工具 v{VERSION}")
-    print("内建命令: cd, pwd, ls, cat, exit")
-    print("输入命令（输入 exit 或 quit 退出）:\n")
+    click.secho(f"Pen 命令行工具 v{VERSION}", fg="cyan", bold=True)
+    click.echo("内建命令: cd, pwd, ls, cat, exit")
+    click.echo("输入命令（输入 exit 或 quit 退出）:\n")
 
     while True:
         try:
@@ -558,7 +558,19 @@ def run_interactive():
                 display_dir = "~"
             else:
                 display_dir = os.path.basename(cwd) or cwd
-            user_input = input(f"pen [{display_dir}]> ").strip()
+
+            config = load_config()
+            username = config.get("username", None)
+            if username:
+                prompt = (click.style(username, fg="green") +
+                          click.style("@pen", fg="bright_black") + " " +
+                          click.style(display_dir, fg="yellow") +
+                          click.style("> ", fg="bright_black"))
+            else:
+                prompt = (click.style("pen", fg="cyan") + " " +
+                          click.style(display_dir, fg="yellow") +
+                          click.style("> ", fg="bright_black"))
+            user_input = input(prompt).strip()
             if not user_input:
                 continue
             if user_input.lower() in ['exit', 'quit', 'q']:
